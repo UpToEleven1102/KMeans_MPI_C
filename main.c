@@ -10,9 +10,13 @@
 
 int initializeCentroids(int k, int rank, double *data, double **cluster_centroids) {
     if (rank == 0) {
-
+        mpi_sendDoublePointer(k, data, rank, 1);
     } else if(rank == 1) {
-
+        double *result = (double*)malloc(k*sizeof(double));
+        mpi_recvDoublePointer(k, result, rank, 0);
+        for(int i = 0; i<k; i++) {
+            printf("%f", result[i]);
+        }
     } else if(rank == 2) {
 
     } else if(rank == 3) {

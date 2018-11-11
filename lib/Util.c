@@ -2,7 +2,7 @@
 // Created by h on 11/10/18.
 //
 
-#include <arpa/nameser.h>
+#include <mpi.h>
 #include "Util.h"
 
 void mpi_sendDoublePointer(int size, double *data, int rank, int target){
