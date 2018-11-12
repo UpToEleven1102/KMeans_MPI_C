@@ -84,12 +84,16 @@ MPI_Status mpi_recvDoublePointer(int size, double *result, int rank, int source)
     return status;
 }
 
-MPI_Status mpi_bCastDoublePointer(int size, double *data, int rank) {
+int mpi_bCastDoublePointer(int size, double *data, int rank) {
     for (int i = 0; i < size; ++i) {
         MPI_Bcast(&data[i], 1, MPI_DOUBLE, rank, MPI_COMM_WORLD);
     }
 }
 
-//int mpi_Allgather(int size, double data[], double *result){
-//    MPI_Allgather(&data, size, MPI_DOUBLE, result, size, MPI_DOUBLE, MPI_COMM_WORLD);
-//}
+int mpi_allGatherDoublePointer(int size, double *data, double *result) {
+    double array[size];
+    for (int i = 0; i < size; ++i) {
+        array[i] = data[i];
+    }
+    MPI_Allgather(&array, size, MPI_DOUBLE, result, size, MPI_DOUBLE, MPI_COMM_WORLD);
+}

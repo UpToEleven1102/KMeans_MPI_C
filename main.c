@@ -5,9 +5,10 @@
 #include <time.h>
 #include "lib/Util.h"
 #include "lib/KMeans_MPI.h"
+#include "lib/KMeans_Search_MPI.h"
 
 #define dim 4
-#define n_data 25
+#define n_data 1000
 
 int main(int argc, char **argv) {
     //init mpi
@@ -35,6 +36,8 @@ int main(int argc, char **argv) {
     cluster_start = (int*)malloc(k * sizeof(int));
     cluster_size = (int*)malloc(k*sizeof(int));
 
+    double *cluster_radius = (double*)malloc(k*sizeof(double));
+
     //initialize data set
     data = (double*) malloc(dim*n_data*sizeof(double));
 
@@ -42,21 +45,29 @@ int main(int argc, char **argv) {
         data[i] = (double)(rand()%10)/10;
     }
 
-    KMeans(dim, n_data, k, rank, num_procs, data, cluster_start, cluster_size, cluster_centroids);
+    //start K-means
+    k = KMeans(dim, n_data, k, rank, num_procs, data, cluster_start, cluster_size, cluster_centroids, cluster_radius);
 
-
-
-
-    /*for (int i = 0; i < dim; ++i) {
-        MPI_Send(&data[i], 1, MPI_DOUBLE, 1, i, MPI_COMM_WORLD);
+    double *result_pt = (double*)malloc(dim*sizeof(double));
+    double *query = (double*) malloc(dim * sizeof(double));
+    if (rank == 0) {
+        for (int i = 0; i < dim; ++i) {
+            query[i] = (double)(rand()%10)/10;
+        }
     }
-         MPI_Send( void *data, int send_count, MPI_Datatype send_type, int destination_ID, int tag, MPI_Comm comm);snip
 
-        MPI_Recv(void *received_data, int receive_count, MPI_Datatype receive_type, int sender_ID, int tag, MPI_Comm comm, MPI_Status *status);
-    */
+    mpi_bCastDoublePointer(dim, query, 0);
 
+    int counter = searchKMeans(dim, n_data, k, rank, num_procs, data, cluster_start, cluster_size,
+            cluster_radius,
+            cluster_centroids,
+            query,
+            result_pt);
 
-    //free pointers
+    if(rank ==0) {
+        printf("Closest point: \n");
+        printArray(dim, result_pt);
+    }
     for (int i = 0; i < k; ++i) {
         free(cluster_centroids[i]);
     }
