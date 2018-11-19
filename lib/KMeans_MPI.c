@@ -254,7 +254,7 @@ int KMeans(int dim, int n_data, int k, int rank, int num_procs,
                         localNewCentroid[j] = 0;
                     }
                 }
-                localNewCentroid[dim] = cluster_size[i];
+                localNewCentroid[dim] = (double)cluster_size[i];
 
                 //broadcast new centroid to global variable pool
                 globalNewCentroids = (double *) malloc((dim + 1) * num_procs * sizeof(double));
@@ -264,17 +264,19 @@ int KMeans(int dim, int n_data, int k, int rank, int num_procs,
                 for (int j = 0; j < dim; ++j) {
                     localNewCentroid[j] = 0;
                 }
-                int globalClusterSize = 0;
+                double globalClusterSize = 0;
                 for (int j = 0; j < num_procs; ++j) {
                     for (int l = 0; l < dim; ++l) {
                         localNewCentroid[l] += globalNewCentroids[j * (dim + 1) + l];
                     }
-                    globalClusterSize += (int) (globalNewCentroids[j * (dim + 1) + dim]);
+                    globalClusterSize += (globalNewCentroids[j * (dim + 1) + dim]);
                 }
 
                 for (int j = 0; j < dim; ++j) {
                     localNewCentroid[j] /= globalClusterSize;
                 }
+
+                //if new centroid != current centroid
                 if (compareArrayToPointer(dim, localNewCentroid, cluster_centroids[i]) != 0) {
                     for (int j = 0; j < dim; ++j) {
                         cluster_centroids[i][j] = localNewCentroid[j];
