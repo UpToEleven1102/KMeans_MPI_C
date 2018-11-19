@@ -44,21 +44,10 @@ int printArray(int size, double *array){
     }
 }
 
-dataPoint* newDataPoint(int dim){
-    dataPoint *newDataPoint;
-    newDataPoint = (dataPoint*)malloc(sizeof(dataPoint));
-    newDataPoint->data = (double*) malloc(dim * sizeof(double));
-    for (int i = 0; i < dim; ++i) {
-        newDataPoint->data[i] = 0;
-    }
-
-    return newDataPoint;
-}
-
-dataPoint *getElement(int index, int dim, double *data){
-    dataPoint *element = newDataPoint(dim);
+double *getElement(int index, int dim, double *data){
+    double *element = (double*)malloc(dim*sizeof(double));
     for (int i = index * dim; i < index*dim + dim ; ++i) {
-        element->data[i - index*dim] = data[i];
+        element[i - index*dim] = data[i];
     }
     return element;
 }
@@ -66,7 +55,7 @@ dataPoint *getElement(int index, int dim, double *data){
 void printDataSet(int dim, int ndata, double *data) {
     for (int i = 0; i < ndata; ++i) {
         printf("--%d--\n", i);
-        printArray(dim, getElement(i, dim, data)->data);
+        printArray(dim, getElement(i, dim, data));
     }
 }
 
@@ -82,12 +71,6 @@ MPI_Status mpi_recvDoublePointer(int size, double *result, int rank, int source)
         MPI_Recv(&result[i], 1, MPI_DOUBLE, source, source, MPI_COMM_WORLD, &status);
     }
     return status;
-}
-
-int mpi_bCastDoublePointer(int size, double *data, int rank) {
-    for (int i = 0; i < size; ++i) {
-        MPI_Bcast(&data[i], 1, MPI_DOUBLE, rank, MPI_COMM_WORLD);
-    }
 }
 
 int mpi_allGatherDoublePointer(int size, double *data, double *result) {

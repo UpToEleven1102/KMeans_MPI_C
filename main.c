@@ -7,8 +7,8 @@
 #include "lib/KMeans_MPI.h"
 #include "lib/KMeans_Search_MPI.h"
 
-#define dim 4
-#define n_data 1000
+#define dim 2
+#define n_data 5
 
 int main(int argc, char **argv) {
     //init mpi
@@ -56,7 +56,7 @@ int main(int argc, char **argv) {
         }
     }
 
-    mpi_bCastDoublePointer(dim, query, 0);
+    MPI_Bcast(query, dim, MPI_DOUBLE, 0, MPI_COMM_WORLD);
 
     int counter = searchKMeans(dim, n_data, k, rank, num_procs, data, cluster_start, cluster_size,
             cluster_radius,
@@ -64,8 +64,8 @@ int main(int argc, char **argv) {
             query,
             result_pt);
 
-    if(rank ==0) {
-        printf("Closest point: \n");
+    if(rank ==1) {
+        printf("Closest point: distance %f\n", distanceOf2Points(dim, query, result_pt));
         printArray(dim, result_pt);
     }
     for (int i = 0; i < k; ++i) {

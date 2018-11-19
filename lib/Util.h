@@ -34,9 +34,7 @@ void printDataSet(int dim, int ndata, double *data);
 
 double square(double n);
 
-dataPoint *getElement(int index, int dim, double *data);
-
-dataPoint *newDataPoint(int dim);
+double *getElement(int index, int dim, double *data);
 
 void mpi_sendDoublePointer(int size, double *data, int rank, int target);
 

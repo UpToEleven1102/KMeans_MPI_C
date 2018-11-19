@@ -19,56 +19,54 @@ bool isCentroid(int dim, int k, double *datum, double **cluster_centroids) {
 }
 
 int nextCentroid(int k, int dim, int n_data, int rank, int num_procs, double *data, double **cluster_centroids) {
+    //array save min distance of each data to all clusters
     double *minDistances = (double *) malloc(n_data * sizeof(double));
     for (int i = 0; i < n_data; ++i) {
-        minDistances[i] = 999;
+        minDistances[i] = RAND_MAX;
     }
     double *datum = NULL;
     double distance;
     double maxDistance = 0;
     int max_idx = 0;
 
-//    printf("Debug %i", k);
-
+    //find max of mins
     for (int i = 0; i < n_data; ++i) {
-        dataPoint *element = getElement(i, dim, data);
-        datum = element->data;
+        datum = getElement(i, dim, data);
         if (isCentroid(dim, k, datum, cluster_centroids)) {
             continue;
         }
+        //k is current number of clusters
         for (int j = 0; j < k; ++j) {
             distance = distanceOf2Points(dim, datum, cluster_centroids[j]);
             if (minDistances[i] > distance)
                 minDistances[i] = distance;
         }
+
         if (minDistances[i] > maxDistance) {
             maxDistance = minDistances[i];
             max_idx = i;
         }
-        free(element);
         free(datum);
     }
 
-
-    //buff globally store data being shared by all processes
+    //buff saves info of local max of mins
     double buff[dim + 1];
-    dataPoint *element = getElement(max_idx, dim, data);
-    datum = element->data;
-    free(element);
+    datum = getElement(max_idx, dim, data);
     for (int i = 0; i < dim; ++i) {
         buff[i] = datum[i];
     }
     buff[dim] = maxDistance;
 
+    //buffer save info of all max of mins of all processes
     double *buffer = (double *) malloc(num_procs * (dim + 1) * sizeof(double));
-    MPI_Allgather(&buff, dim + 1, MPI_DOUBLE, buffer, dim + 1, MPI_DOUBLE, MPI_COMM_WORLD);
-
+    MPI_Allgather(buff, dim + 1, MPI_DOUBLE, buffer, dim + 1, MPI_DOUBLE, MPI_COMM_WORLD);
 
     maxDistance = buffer[dim];
     for (int i = 0; i < dim; ++i) {
         datum[i] = buffer[i];
     }
 
+    //find max of all maxs
     dim = dim + 1;
     for (int i = 1; i < num_procs; ++i) {
         if (maxDistance < buffer[i * dim + dim - 1]) {
@@ -79,12 +77,9 @@ int nextCentroid(int k, int dim, int n_data, int rank, int num_procs, double *da
         }
     }
 
-    for (int i = 0; i < dim; ++i) {
-        cluster_centroids[k][i] = datum[i];
-    }
+    cluster_centroids[k] = datum;
     free(buffer);
     free(minDistances);
-    free(datum);
 }
 
 int initializeCentroids(int k, int dim, int n_data, int rank, int num_procs, double *data, double **cluster_centroids) {
@@ -92,51 +87,32 @@ int initializeCentroids(int k, int dim, int n_data, int rank, int num_procs, dou
 
     //generate first centroid
     if (rank == 0) {
-        int idx = rand() % n_data;
-        dataPoint *ele = getElement(idx, dim, data);
-        double *datum = ele->data;
-        for (int i = 0; i < dim; ++i) {
-            cluster_centroids[0][i] = datum[i];
-        }
-        free(datum);
-        free(ele);
+        cluster_centroids[0] = getElement(rand() % n_data, dim, data);
     }
 
-    mpi_bCastDoublePointer(dim, cluster_centroids[0], 0);
+    MPI_Bcast(cluster_centroids[0], dim, MPI_DOUBLE, 0, MPI_COMM_WORLD);
+
 
     //find next centroids
     while (counter < k) {
         nextCentroid(counter, dim, n_data, rank, num_procs, data, cluster_centroids);
         counter++;
     }
-
-//    if (rank == 1) {
-//        for (int i = 0; i < k; ++i) {
-//            for (int j = 0; j < dim; ++j) {
-//                printf("%f\n", cluster_centroids[i][j]);
-//            }
-//        }
-//    }
 }
 
-double *newCentroid(int dim, int cluster_size, metaData *cluster_info, double *data) {
+double *sumElements(int dim, int cluster_size, metaData *cluster_info, double *data) {
     double *centroid = (double *) malloc(dim * sizeof(double));
     for (int i = 0; i < dim; ++i) {
         centroid[i] = 0;
     }
 
     while (cluster_info != NULL) {
-        dataPoint *element = getElement(cluster_info->idx, dim, data);
+        double *element = getElement(cluster_info->idx, dim, data);
         for (int i = 0; i < dim; ++i) {
-            centroid[i] = centroid[i] + element->data[i];
+            centroid[i] = centroid[i] + element[i];
         }
-        free(element->data);
         free(element);
         cluster_info = cluster_info->next;
-    }
-
-    for (int i = 0; i < dim; ++i) {
-        centroid[i] = centroid[i] / cluster_size;
     }
 
     return centroid;
@@ -153,7 +129,7 @@ double findClusterRadius(int dim, int cluster_start, int cluster_size, double *c
     double result = 0;
     double *datum;
     for (int i = cluster_start; i < cluster_start + cluster_size; ++i) {
-         datum = getElement(i, dim, data) -> data;
+        datum = getElement(i, dim, data);
         double distance = distanceOf2Points(dim, datum, cluster_centroid);
         if (distance > result) {
             result = distance;
@@ -163,21 +139,23 @@ double findClusterRadius(int dim, int cluster_start, int cluster_size, double *c
     return result;
 }
 
-int rearrangeData(int dim,int n_data, int n_cluster, double **cluster_centroids,double *data, metaData **cluster_info, int* cluster_size, int *cluster_start, double *cluster_radius){
-    double *cluster_assign = (double*) malloc(dim * n_data * sizeof(double));
+int rearrangeData(int dim, int n_data, int n_cluster, double **cluster_centroids, double *data, metaData **cluster_info,
+                  int *cluster_size, int *cluster_start, double *cluster_radius) {
+    double *cluster_assign = (double *) malloc(dim * n_data * sizeof(double));
     int idx = 0;
     cluster_start[0] = 0;
+
     double *datum;
+
     for (int i = 0; i < n_cluster; ++i) {
-        if( i < n_cluster -1)
-            cluster_start[i+1] = cluster_start[i] + cluster_size[i];
-        while(cluster_info[i] !=NULL) {
-            dataPoint *element = getElement(cluster_info[i]->idx, dim, data);
-            datum= element->data;
+        if (i < n_cluster - 1)
+            cluster_start[i + 1] = cluster_start[i] + cluster_size[i];
+        while (cluster_info[i] != NULL) {
+            datum = getElement(cluster_info[i]->idx, dim, data);
             for (int j = 0; j < dim; ++j) {
-                cluster_assign[idx * dim +j] = datum[j];
+                cluster_assign[idx * dim + j] = datum[j];
             }
-            free(element); free(datum);
+            free(datum);
             idx++;
             cluster_info[i] = cluster_info[i]->next;
         }
@@ -189,6 +167,7 @@ int rearrangeData(int dim,int n_data, int n_cluster, double **cluster_centroids,
 
     for (int i = 0; i < n_cluster; ++i) {
         cluster_radius[i] = findClusterRadius(dim, cluster_start[i], cluster_size[i], cluster_centroids[i], data);
+
     }
     free(cluster_assign);
 }
@@ -208,9 +187,9 @@ int KMeans(int dim, int n_data, int k, int rank, int num_procs,
     int cluster_idx = 0;
     double distance;
     bool noChange = false;
-    int notEmpty = 0;
+    int isEmpty = 0;
     double *datum = NULL;
-    double localNewCentroid[dim];
+    double localNewCentroid[dim + 1];
     double *globalNewCentroids = NULL;
     int *buffer_int;
 
@@ -222,9 +201,8 @@ int KMeans(int dim, int n_data, int k, int rank, int num_procs,
         }
 
         for (int i = 0; i < n_data; ++i) {
-            dataPoint *element = getElement(i, dim, data);
-            datum = element->data;
-            distance = 9999;
+            datum = getElement(i, dim, data);
+            distance = RAND_MAX;
 
             for (int j = 0; j < n_cluster; ++j) {
                 double tempDistance = distanceOf2Points(dim, datum, cluster_centroids[j]);
@@ -248,82 +226,54 @@ int KMeans(int dim, int n_data, int k, int rank, int num_procs,
             }
 
             free(datum);
-            free(element);
         }
 
-//        if (rank == 1)
-//        for (int i = 0; i < n_cluster; ++i) {
-//            printf("cluster - %d\n", i);
-//            while(cluster_info[i] != NULL) {
-//                printf("idx - %d\n", cluster_info[i]->idx);
-//                cluster_info[i] = cluster_info[i]->next;
-//            }
-//        }
-
         for (int i = 0; i < n_cluster; ++i) {
-            notEmpty = 0;
+            isEmpty = 0;
             if (cluster_info[i] != NULL) {
-                notEmpty = 1;
+                isEmpty = 1;
                 //inform other processes
             }
 
-            buffer_int = (int *) malloc(num_procs * sizeof(int));
+            MPI_Allreduce(&isEmpty, &isEmpty, 1, MPI_INT, MPI_SUM, MPI_COMM_WORLD);
 
-            MPI_Allgather(&notEmpty, 1, MPI_INT, buffer_int, 1, MPI_INT, MPI_COMM_WORLD);
-//
-//            if (rank == 1){
-//                for (int i = 0; i < num_procs; ++i) {
-//                    printf("buffer - %d", buffer_int[i]);
-//                }
-//                printf("\n");
-//            }
-
-            notEmpty = 0;
-            for (int j = 0; j < num_procs; ++j) {
-                if (buffer_int[j] == 1) {
-                    notEmpty = 1;
-                    break;
-                }
-            }
-
-            free(buffer_int);
-
-            if (notEmpty == 0) {
+            if (isEmpty == 0) {
                 n_cluster--;
                 removeCluster(n_cluster, i, cluster_info, cluster_size);
                 i--;
             } else {
                 if (cluster_info[i] != NULL) {
-                    //dont' want to allocate a temp variable, use this to hold temp value
-                    globalNewCentroids = newCentroid(dim, cluster_size[i], cluster_info[i], data);
+                    datum = sumElements(dim, cluster_size[i], cluster_info[i], data);
 
                     for (int j = 0; j < dim; ++j) {
-                        localNewCentroid[j] = globalNewCentroids[j];
+                        localNewCentroid[j] = datum[j];
                     }
-                    free(globalNewCentroids);
+                    free(datum);
                 } else {
                     for (int j = 0; j < dim; ++j) {
                         localNewCentroid[j] = 0;
                     }
                 }
+                localNewCentroid[dim] = cluster_size[i];
 
                 //broadcast new centroid to global variable pool
-                globalNewCentroids = (double *) malloc(dim * num_procs * sizeof(double));
-                MPI_Allgather(&localNewCentroid, dim, MPI_DOUBLE, globalNewCentroids, dim, MPI_DOUBLE, MPI_COMM_WORLD);
-
+                globalNewCentroids = (double *) malloc((dim + 1) * num_procs * sizeof(double));
+                MPI_Allgather(localNewCentroid, dim + 1, MPI_DOUBLE, globalNewCentroids, (dim + 1), MPI_DOUBLE,
+                              MPI_COMM_WORLD);
                 //calculate new centroid
                 for (int j = 0; j < dim; ++j) {
                     localNewCentroid[j] = 0;
                 }
-
+                int globalClusterSize = 0;
                 for (int j = 0; j < num_procs; ++j) {
                     for (int l = 0; l < dim; ++l) {
-                        localNewCentroid[l] += globalNewCentroids[j * dim + l];
+                        localNewCentroid[l] += globalNewCentroids[j * (dim + 1) + l];
                     }
+                    globalClusterSize += (int) (globalNewCentroids[j * (dim + 1) + dim]);
                 }
 
                 for (int j = 0; j < dim; ++j) {
-                    localNewCentroid[j] /= num_procs;
+                    localNewCentroid[j] /= globalClusterSize;
                 }
                 if (compareArrayToPointer(dim, localNewCentroid, cluster_centroids[i]) != 0) {
                     for (int j = 0; j < dim; ++j) {
@@ -335,17 +285,8 @@ int KMeans(int dim, int n_data, int k, int rank, int num_procs,
         }
     }
 
-    rearrangeData(dim, n_data, n_cluster, cluster_centroids, data, cluster_info, cluster_size, cluster_start, cluster_radius);
-//    if (rank == 1) {
-//        printf("debug cluster: %d - new centroids: \n", n_cluster);
-//        for (int i = 0; i < n_cluster; ++i) {
-//            for (int j = 0; j < dim; ++j) {
-//                printf("%f\n", cluster_centroids[i][j]);
-//            }
-//            printf("cluster %d size %d\n", i, cluster_size[i]);
-//        }
-//
-//    }
+    rearrangeData(dim, n_data, n_cluster, cluster_centroids, data, cluster_info, cluster_size, cluster_start,
+                  cluster_radius);
 
     return n_cluster;
 
